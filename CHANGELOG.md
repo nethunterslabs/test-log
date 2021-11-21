@@ -1,5 +1,5 @@
-Unreleased
-----------
+0.2.8
+-----
 - Added deprecation notice to `#[test]` attribute to inform users about
   rename to `test-log`
 
