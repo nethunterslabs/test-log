@@ -70,6 +70,10 @@ use syn::ReturnType;
 /// }
 /// # }
 /// ```
+#[deprecated(
+  since = "0.2.8",
+  note = "test-env-log has been renamed to test-log; use it instead"
+)]
 #[proc_macro_attribute]
 pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
   let args = parse_macro_input!(attr as AttributeArgs);
