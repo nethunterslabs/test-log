@@ -103,25 +103,27 @@ on what the events mean.
 
 #### Features
 
-The crate comes with two features:
+The crate comes with three features:
 - `log`, enabled by default, controls initialization for the `log`
   crate.
 - `trace`, disabled by default, controls initialization for the
   `tracing` crate.
+- `trace-json`, disabled by default, controls initialization for the
+  `tracing` crate with JSON logging.
 
 Depending on what backend the crate-under-test (and its dependencies)
 use, the respective feature should be enabled to make messages that are
 emitted by the test manifest on the console.
 
 Note that as a user you are required to explicitly add `env_logger` or
-`tracing-subscriber` as a dependency to your project-under-test (when
-enabling the `log` or `trace` feature, respectively). E.g.,
+`tracing-subscriber` with the "env-filter" and "json" features as a dependency to your project-under-test (when
+enabling the `log` or `trace` or `trace-json` feature, respectively). E.g.,
 
 ```toml
 [dev-dependencies]
 env_logger = "*"
 tracing = {version = "0.1", default-features = false}
-tracing-subscriber = {version = "0.3", default-features = false, features = ["env-filter", "fmt"]}
+tracing-subscriber = {version = "0.3", default-features = false, features = ["env-filter", "fmt", "json"]}
 ```
 
 

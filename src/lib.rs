@@ -134,6 +134,7 @@ fn expand_tracing_init() -> Tokens {
           }
         };
 
+        use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
         let subscriber = ::tracing_subscriber::FmtSubscriber::builder()
           .with_env_filter(::tracing_subscriber::EnvFilter::from_default_env())
           .with_span_events(__internal_event_filter)
@@ -143,6 +144,53 @@ fn expand_tracing_init() -> Tokens {
       }
     }
     #[cfg(not(feature = "trace"))]
+    quote! {}
+}
+
+/// Expand the initialization code for the `tracing` crate.
+fn expand_tracing_json_init() -> Tokens {
+    #[cfg(feature = "trace-json")]
+    quote! {
+      {
+        let __internal_event_filter = {
+          use ::tracing_subscriber::fmt::format::FmtSpan;
+
+          match ::std::env::var("RUST_LOG_SPAN_EVENTS") {
+            Ok(value) => {
+              value
+                .to_ascii_lowercase()
+                .split(",")
+                .map(|filter| match filter.trim() {
+                  "new" => FmtSpan::NEW,
+                  "enter" => FmtSpan::ENTER,
+                  "exit" => FmtSpan::EXIT,
+                  "close" => FmtSpan::CLOSE,
+                  "active" => FmtSpan::ACTIVE,
+                  "full" => FmtSpan::FULL,
+                  _ => panic!("test-log: RUST_LOG_SPAN_EVENTS must contain filters separated by `,`.\n\t\
+                    For example: `active` or `new,close`\n\t\
+                    Supported filters: new, enter, exit, close, active, full\n\t\
+                    Got: {}", value),
+                })
+                .fold(FmtSpan::NONE, |acc, filter| filter | acc)
+            },
+            Err(::std::env::VarError::NotUnicode(_)) =>
+              panic!("test-log: RUST_LOG_SPAN_EVENTS must contain a valid UTF-8 string"),
+            Err(::std::env::VarError::NotPresent) => FmtSpan::NONE,
+          }
+        };
+
+        use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
+        let subscriber = ::tracing_subscriber::FmtSubscriber::builder()
+          .with_env_filter(::tracing_subscriber::EnvFilter::from_default_env())
+          .with_span_events(__internal_event_filter)
+          .with_test_writer()
+          .json()
+          .finish();
+        let _ = ::tracing::subscriber::set_global_default(subscriber);
+      }
+    }
+    #[cfg(not(feature = "trace-json"))]
     quote! {}
 }
 
@@ -167,6 +215,7 @@ fn expand_wrapper(inner_test: &Path, wrappee: &ItemFn) -> TokenStream {
 
     let logging_init = expand_logging_init();
     let tracing_init = expand_tracing_init();
+    let tracing_json_init = expand_tracing_json_init();
 
     let result = quote! {
       #[#inner_test]
@@ -178,6 +227,7 @@ fn expand_wrapper(inner_test: &Path, wrappee: &ItemFn) -> TokenStream {
 
         #logging_init
         #tracing_init
+        #tracing_json_init
 
         test_impl()#await_
       }
