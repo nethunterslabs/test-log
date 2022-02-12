@@ -1,7 +1,7 @@
 // Copyright (C) 2019-2021 Daniel Mueller <deso@posteo.net>
 // SPDX-License-Identifier: (Apache-2.0 OR MIT)
 
-#![deny(broken_intra_doc_links, missing_docs)]
+#![deny(rustdoc::broken_intra_doc_links, missing_docs)]
 
 //! A crate providing a replacement #[[macro@test]] attribute that
 //! initializes logging and/or tracing infrastructure before running
@@ -14,15 +14,14 @@ use proc_macro2::TokenStream as Tokens;
 
 use quote::quote;
 
+use syn::parse_macro_input;
+use syn::parse_quote;
 use syn::AttributeArgs;
 use syn::ItemFn;
 use syn::Meta;
 use syn::NestedMeta;
-use syn::parse_macro_input;
-use syn::parse_quote;
 use syn::Path;
 use syn::ReturnType;
-
 
 /// A procedural macro for the `test` attribute.
 ///
@@ -78,113 +77,110 @@ use syn::ReturnType;
 /// ```
 #[proc_macro_attribute]
 pub fn test(attr: TokenStream, item: TokenStream) -> TokenStream {
-  let args = parse_macro_input!(attr as AttributeArgs);
-  let input = parse_macro_input!(item as ItemFn);
+    let args = parse_macro_input!(attr as AttributeArgs);
+    let input = parse_macro_input!(item as ItemFn);
 
-  let inner_test = match args.as_slice() {
-    [] => parse_quote! { ::core::prelude::v1::test },
-    [NestedMeta::Meta(Meta::Path(path))] => path.clone(),
-    _ => panic!("unsupported attributes supplied: {}", quote! { args }),
-  };
+    let inner_test = match args.as_slice() {
+        [] => parse_quote! { ::core::prelude::v1::test },
+        [NestedMeta::Meta(Meta::Path(path))] => path.clone(),
+        _ => panic!("unsupported attributes supplied: {}", quote! { args }),
+    };
 
-  expand_wrapper(&inner_test, &input)
+    expand_wrapper(&inner_test, &input)
 }
-
 
 /// Expand the initialization code for the `log` crate.
 fn expand_logging_init() -> Tokens {
-  #[cfg(feature = "log")]
-  quote! {
-    {
-      let _ = ::env_logger::builder().is_test(true).try_init();
+    #[cfg(feature = "log")]
+    quote! {
+      {
+        let _ = ::env_logger::builder().is_test(true).try_init();
+      }
     }
-  }
-  #[cfg(not(feature = "log"))]
-  quote! {}
+    #[cfg(not(feature = "log"))]
+    quote! {}
 }
-
 
 /// Expand the initialization code for the `tracing` crate.
 fn expand_tracing_init() -> Tokens {
-  #[cfg(feature = "trace")]
-  quote! {
-    {
-      let __internal_event_filter = {
-        use ::tracing_subscriber::fmt::format::FmtSpan;
+    #[cfg(feature = "trace")]
+    quote! {
+      {
+        let __internal_event_filter = {
+          use ::tracing_subscriber::fmt::format::FmtSpan;
 
-        match ::std::env::var("RUST_LOG_SPAN_EVENTS") {
-          Ok(value) => {
-            value
-              .to_ascii_lowercase()
-              .split(",")
-              .map(|filter| match filter.trim() {
-                "new" => FmtSpan::NEW,
-                "enter" => FmtSpan::ENTER,
-                "exit" => FmtSpan::EXIT,
-                "close" => FmtSpan::CLOSE,
-                "active" => FmtSpan::ACTIVE,
-                "full" => FmtSpan::FULL,
-                _ => panic!("test-log: RUST_LOG_SPAN_EVENTS must contain filters separated by `,`.\n\t\
-                  For example: `active` or `new,close`\n\t\
-                  Supported filters: new, enter, exit, close, active, full\n\t\
-                  Got: {}", value),
-              })
-              .fold(FmtSpan::NONE, |acc, filter| filter | acc)
-          },
-          Err(::std::env::VarError::NotUnicode(_)) =>
-            panic!("test-log: RUST_LOG_SPAN_EVENTS must contain a valid UTF-8 string"),
-          Err(::std::env::VarError::NotPresent) => FmtSpan::NONE,
-        }
-      };
+          match ::std::env::var("RUST_LOG_SPAN_EVENTS") {
+            Ok(value) => {
+              value
+                .to_ascii_lowercase()
+                .split(",")
+                .map(|filter| match filter.trim() {
+                  "new" => FmtSpan::NEW,
+                  "enter" => FmtSpan::ENTER,
+                  "exit" => FmtSpan::EXIT,
+                  "close" => FmtSpan::CLOSE,
+                  "active" => FmtSpan::ACTIVE,
+                  "full" => FmtSpan::FULL,
+                  _ => panic!("test-log: RUST_LOG_SPAN_EVENTS must contain filters separated by `,`.\n\t\
+                    For example: `active` or `new,close`\n\t\
+                    Supported filters: new, enter, exit, close, active, full\n\t\
+                    Got: {}", value),
+                })
+                .fold(FmtSpan::NONE, |acc, filter| filter | acc)
+            },
+            Err(::std::env::VarError::NotUnicode(_)) =>
+              panic!("test-log: RUST_LOG_SPAN_EVENTS must contain a valid UTF-8 string"),
+            Err(::std::env::VarError::NotPresent) => FmtSpan::NONE,
+          }
+        };
 
-      let subscriber = ::tracing_subscriber::FmtSubscriber::builder()
-        .with_env_filter(::tracing_subscriber::EnvFilter::from_default_env())
-        .with_span_events(__internal_event_filter)
-        .with_test_writer()
-        .finish();
-      let _ = ::tracing::subscriber::set_global_default(subscriber);
+        let subscriber = ::tracing_subscriber::FmtSubscriber::builder()
+          .with_env_filter(::tracing_subscriber::EnvFilter::from_default_env())
+          .with_span_events(__internal_event_filter)
+          .with_test_writer()
+          .finish();
+        let _ = ::tracing::subscriber::set_global_default(subscriber);
+      }
     }
-  }
-  #[cfg(not(feature = "trace"))]
-  quote! {}
+    #[cfg(not(feature = "trace"))]
+    quote! {}
 }
-
 
 /// Emit code for a wrapper function around a test function.
 fn expand_wrapper(inner_test: &Path, wrappee: &ItemFn) -> TokenStream {
-  let attrs = &wrappee.attrs;
-  let async_ = &wrappee.sig.asyncness;
-  let await_ = if async_.is_some() {
-    quote! {.await}
-  } else {
-    quote! {}
-  };
-  let body = &wrappee.block;
-  let test_name = &wrappee.sig.ident;
+    let attrs = &wrappee.attrs;
+    let async_ = &wrappee.sig.asyncness;
+    let await_ = if async_.is_some() {
+        quote! {.await}
+    } else {
+        quote! {}
+    };
+    let body = &wrappee.block;
+    let test_name = &wrappee.sig.ident;
 
-  // Note that Rust does not allow us to have a test function with
-  // #[should_panic] that has a non-unit return value.
-  let ret = match &wrappee.sig.output {
-    ReturnType::Default => quote! {},
-    ReturnType::Type(_, type_) => quote! {-> #type_},
-  };
+    // Note that Rust does not allow us to have a test function with
+    // #[should_panic] that has a non-unit return value.
+    let ret = match &wrappee.sig.output {
+        ReturnType::Default => quote! {},
+        ReturnType::Type(_, type_) => quote! {-> #type_},
+    };
 
-  let logging_init = expand_logging_init();
-  let tracing_init = expand_tracing_init();
+    let logging_init = expand_logging_init();
+    let tracing_init = expand_tracing_init();
 
-  let result = quote! {
-    #[#inner_test]
-    #(#attrs)*
-    #async_ fn #test_name() #ret {
-      #async_ fn test_impl() #ret {
-        #body
+    let result = quote! {
+      #[#inner_test]
+      #(#attrs)*
+      #async_ fn #test_name() #ret {
+        #async_ fn test_impl() #ret {
+          #body
+        }
+
+        #logging_init
+        #tracing_init
+
+        test_impl()#await_
       }
-
-      #logging_init
-      #tracing_init
-
-      test_impl()#await_
-    }
-  };
-  result.into()
+    };
+    result.into()
 }
